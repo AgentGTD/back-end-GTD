@@ -51,6 +51,7 @@ type CreateTaskRequest struct {
 	Category      string  `json:"category"`
 	ProjectID     *string `json:"projectId,omitempty"`
 	NextActionID  *string `json:"nextActionId,omitempty"`
+	Completed     *bool   `json:"completed,omitempty"`
 }
 
 type CreateTaskResponse struct {
@@ -214,6 +215,9 @@ func UpdateTask(ctx context.Context, id string, req *CreateTaskRequest) (*Create
 	}
 	if req.Category != "" {
 		update["category"] = req.Category
+	}
+	if req.Completed != nil {
+		update["completed"] = *req.Completed
 	}
 	// Enforce business logic: Inbox only if no project/nextAction
 	if (update["projectId"] != nil || update["nextActionId"] != nil) && update["category"] == "Inbox" {
