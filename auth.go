@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 	"errors"
+	"fmt"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -14,6 +15,10 @@ import (
 )
 
 var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
+
+func init() {
+    fmt.Println("JWT_SECRET length:", len(jwtSecret))
+}
 
 // SignupRequest is the input for user registration.
 type SignupRequest struct {
