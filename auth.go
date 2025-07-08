@@ -3,10 +3,8 @@ package encoreapp
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
-	"encore.dev/config"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
 	"go.mongodb.org/mongo-driver/bson"
@@ -15,14 +13,8 @@ import (
 )
 
 
-type AppConfig struct {
-	JWTSecret   string `env:"JWT_SECRET,required"`
-	MongoDBURI  string `env:"MONGODB_URI,required"`
-}
 
-var cfg = config.Load[AppConfig]()
-
-var jwtSecret = []byte(cfg.JWTSecret)
+var jwtSecret = []byte(secrets.JWT_SECRET) 
 
 // SignupRequest is the input for user registration.
 type SignupRequest struct {

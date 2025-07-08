@@ -5,7 +5,6 @@ import (
 	"log"
 	"sync"
 	"time"
-	"encore.dev/config"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -17,18 +16,11 @@ var (
 )
 
 
-type AppConfig struct {
-    JWTSecret   string `env:"JWT_SECRET,required"`
-    MongoDBURI  string `env:"MONGODB_URI,required"`
-}
-
-// Then in each file:
-var cfg = config.Load[AppConfig]()
 
 // GetMongoClient returns a singleton MongoDB client.
 func GetMongoClient() *mongo.Client {
 	once.Do(func() {
-		uri := cfg.MongoDBURI
+		uri := secrets.MONGODB_URI
 		if uri == "" {
 			log.Fatal("MONGODB_URI environment variable not set")
 		}
