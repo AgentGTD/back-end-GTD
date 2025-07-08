@@ -2,23 +2,27 @@ package encoreapp
 
 import (
 	"context"
-	"os"
-	"time"
 	"errors"
 	"fmt"
+	"time"
 
+	"encore.dev/config"
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"golang.org/x/crypto/bcrypt"
-	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
-func init() {
-    fmt.Println("JWT_SECRET length:", len(jwtSecret))
+type AppConfig struct {
+	JWTSecret   string `env:"JWT_SECRET,required"`
+	MongoDBURI  string `env:"MONGODB_URI,required"`
 }
+
+var cfg = config.Load[AppConfig]()
+
+var jwtSecret = []byte(cfg.JWTSecret)
 
 // SignupRequest is the input for user registration.
 type SignupRequest struct {
@@ -85,8 +89,6 @@ func generateJWT(userID string) (string, error) {
 	return token.SignedString(jwtSecret)
 }
 
-
-
 // LoginRequest is the input for user login.
 type LoginRequest struct {
 	Email    string `json:"email"`
@@ -126,8 +128,6 @@ func Login(ctx context.Context, req *LoginRequest) (*LoginResponse, error) {
 	return &LoginResponse{Token: token, User: user}, nil
 }
 
-
-
 // GetUserResponse is the output for getting the current user.
 type GetUserResponse struct {
 	User User `json:"user"`
@@ -135,50 +135,50 @@ type GetUserResponse struct {
 
 // GetUserRequest is the input for getting the current user.
 type GetUserRequest struct {
-    Authorization string `header:"Authorization"`
+	Authorization string `header:"Authorization"`
 }
 
 // encore:api public method=GET path=/api/auth/user
 func GetUser(ctx context.Context, req *GetUserRequest) (*GetUserResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
-    if err != nil {
-        return nil, errors.New("unauthorized")
-    }
-    client := GetMongoClient()
-    users := client.Database("gtd").Collection("users")
+	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	if err != nil {
+		return nil, errors.New("unauthorized")
+	}
+	client := GetMongoClient()
+	users := client.Database("gtd").Collection("users")
 
-    var user User
-    err = users.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
-    if err != nil {
-        return nil, errors.New("user not found")
-    }
-    user.Password = ""
-    return &GetUserResponse{User: user}, nil
+	var user User
+	err = users.FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		return nil, errors.New("user not found")
+	}
+	user.Password = ""
+	return &GetUserResponse{User: user}, nil
 }
 
 // Helper to extract user ID from JWT in context
 func getUserIDFromContext(ctx context.Context, Authorization string) (primitive.ObjectID, error) {
-    authHeader := Authorization
-    // Accept both "Bearer <token>" and just "<token>"
-    var tokenStr string
-    if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-        tokenStr = authHeader[7:]
-    } else {
-        tokenStr = authHeader
-    }
-    token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
-        return jwtSecret, nil
-    })
-    if err != nil || !token.Valid {
-        return primitive.NilObjectID, errors.New("invalid token")
-    }
-    claims, ok := token.Claims.(jwt.MapClaims)
-    if !ok {
-        return primitive.NilObjectID, errors.New("invalid token claims")
-    }
-    userIDStr, ok := claims["userId"].(string)
-    if !ok {
-        return primitive.NilObjectID, errors.New("invalid userId in token")
-    }
-    return primitive.ObjectIDFromHex(userIDStr)
+	authHeader := Authorization
+	// Accept both "Bearer <token>" and just "<token>"
+	var tokenStr string
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		tokenStr = authHeader[7:]
+	} else {
+		tokenStr = authHeader
+	}
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+	if err != nil || !token.Valid {
+		return primitive.NilObjectID, errors.New("invalid token")
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return primitive.NilObjectID, errors.New("invalid token claims")
+	}
+	userIDStr, ok := claims["userId"].(string)
+	if !ok {
+		return primitive.NilObjectID, errors.New("invalid userId in token")
+	}
+	return primitive.ObjectIDFromHex(userIDStr)
 }
