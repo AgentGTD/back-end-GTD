@@ -31,8 +31,8 @@ type Project struct {
 type Task struct {
 	ID            primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
 	UserID        primitive.ObjectID  `bson:"userId" json:"userId"`
-	ProjectID     *primitive.ObjectID `bson:"projectId,omitempty" json:"projectId,omitempty"`
-	NextActionID  *primitive.ObjectID `bson:"nextActionId,omitempty" json:"nextActionId,omitempty"`
+	ProjectID     *primitive.ObjectID `bson:"projectId" json:"projectId"`
+	NextActionID  *primitive.ObjectID `bson:"nextActionId," json:"nextActionId"`
 	Title         string              `bson:"title" json:"title"`
 	Description   string              `bson:"description" json:"description"`
 	DueDate       *time.Time          `bson:"dueDate,omitempty" json:"dueDate,omitempty"`

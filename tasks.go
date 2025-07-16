@@ -70,10 +70,14 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 	var dueDate *time.Time
 	if req.DueDate != nil && *req.DueDate != "" {
 		d, err := time.Parse(time.RFC3339, *req.DueDate)
+		if err != nil {
+			d, err = time.Parse("2006-01-02", *req.DueDate)
+		}
 		if err == nil {
 			dueDate = &d
 		}
-	} else {
+	}
+	if dueDate == nil {
 		now := time.Now()
 		dueDate = &now
 	}
@@ -98,7 +102,7 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 	if (projectID != nil || nextActionID != nil) && req.Category == "inbox" {
 		// If client sent 'inbox' but provided project/nextAction, override to 'projects' or 'nextActions' or both
 		if projectID != nil && nextActionID != nil {
-			req.Category = "projects,nextActions"
+			req.Category = "projects & nextActions"
 		} else if projectID != nil {
 			req.Category = "projects"
 		} else if nextActionID != nil {
@@ -188,6 +192,9 @@ func UpdateTask(ctx context.Context, id string, req *CreateTaskRequest) (*Create
 	}
 	if req.DueDate != nil && *req.DueDate != "" {
 		d, err := time.Parse(time.RFC3339, *req.DueDate)
+		if err != nil {
+			d, err = time.Parse("2006-01-02", *req.DueDate)
+		}
 		if err == nil {
 			update["dueDate"] = d
 		}

@@ -1,7 +1,7 @@
 package encoreapp
 
 
-// Centralized configuration secrets for the app.var secrets struct {
+// Centralized configuration secrets for the app
 var secrets struct {
     GROQ_API_KEY string
     MONGODB_URI  string

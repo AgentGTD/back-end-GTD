@@ -21,6 +21,7 @@ var (
 func GetMongoClient() *mongo.Client {
 	once.Do(func() {
 		uri := secrets.MONGODB_URI
+		log.Printf("Connecting to MongoDB at %s", uri)
 		if uri == "" {
 			log.Fatal("MONGODB_URI environment variable not set")
 		}
