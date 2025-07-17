@@ -140,6 +140,7 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 	return &CreateTaskResponse{Task: task}, nil
 }
 
+
 // GetTaskRequest for fetching a specific task
 // encore:api public method=GET path=/api/tasks/:id
 func GetTask(ctx context.Context, id string, req *GetTasksRequest) (*CreateTaskResponse, error) {

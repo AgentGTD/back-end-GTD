@@ -340,6 +340,16 @@ func AICreateProject(ctx context.Context, req *AICreateProjectRequest) (*AICreat
         }
     }
 
+    // Update TaskCount in project
+     _, err = GetMongoClient().Database("gtd").Collection("projects").UpdateByID(
+         ctx,
+         project.ID,
+         bson.M{"$set": bson.M{"task_count": len(createdTasks)}},
+     )
+     if err != nil {
+         return nil, errors.New("failed to update project task count")
+     }
+     
     return &AICreateProjectResponse{
         Project: project,
         Tasks:   createdTasks,

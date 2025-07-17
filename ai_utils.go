@@ -69,9 +69,9 @@ You are a productivity assistant that converts natural language into structured 
 
 Your task is to extract the following fields:
 - title ( make it concise and clear by including time if specified )
-- description ( set if needed else "")
+- description ( make if concise and clear if needed else "")
 - dueDate (in ISO 8601 format)
-- priority (1 to 6; default to 6)
+- priority (1 to 5; default to 5)
 - category (use "inbox" if not specified)
 - projectName (use specified or null)
 - nextActionName (use specified or null)
@@ -81,7 +81,7 @@ Output ONLY in this JSON format:
   "title": "...",
   "description": "...",
   "dueDate": "...",
-  "priority": 6,
+  "priority": 5,
   "category": "inbox",
   "projectName": "...",
   "nextActionName": "..."
@@ -98,8 +98,8 @@ You are a productivity assistant for a task management app.
 
 When the user wants to create a new project, extract:
 - projectName (required)
-- projectDescription (optional)
-- tasks: an array of tasks, each with title, description, dueDate (ISO 8601), priority (1-5), category ("inbox" or "projects")
+- projectDescription (required)
+- tasks: an array of tasks, each with title, description, dueDate (ISO 8601), priority (1-5), category ("projects")
 
 Output ONLY in this JSON format:
 {
@@ -119,3 +119,4 @@ If no tasks are mentioned, return an empty array for "tasks".
 No extra text.
 `
 )
+
