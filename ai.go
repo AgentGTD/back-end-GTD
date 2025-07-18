@@ -15,6 +15,7 @@ import (
     "go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+
 type GroqChatRequest struct {
     Messages []GroqMessage `json:"messages"`
     Model    string        `json:"model"`
@@ -32,10 +33,10 @@ type GroqChatResponse struct {
 }
 
 func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
-    today := time.Now().Format("2006-01-02")
-    systemPrompt = fmt.Sprintf(systemPrompt, today)
+    dayAndDate := time.Now().Format("2025-07-18")
+    systemPrompt = fmt.Sprintf("Today is %s ", dayAndDate, systemPrompt)
     reqBody := GroqChatRequest{
-        Model: "llama3-70b-8192",
+        Model: "llama-3.1-8b-instant",
         Messages: []GroqMessage{
             {Role: "system", Content: systemPrompt},
             {Role: "user", Content: userPrompt},
@@ -64,6 +65,102 @@ func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
     }
     return groqResp.Choices[0].Message.Content, nil
 }
+
+
+// Unified AI Assistant Endpoint
+
+type AIAssistantRequest struct {
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
+}
+
+type AIAssistantResponse struct {
+    Intent      string  `json:"intent"`
+    Message     string  `json:"message,omitempty"`
+    Task        *Task   `json:"task,omitempty"`
+    Project     *Project `json:"project,omitempty"`
+    Tasks       []Task  `json:"tasks,omitempty"`
+    Summary     string  `json:"summary,omitempty"`
+}
+
+// encore:api public method=POST path=/api/ai/assistant
+func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResponse, error) {
+    // 1. Parse intent
+    parseResp, err := AIParseIntent(ctx, &AIParseIntentRequest{
+        Prompt: req.Prompt,
+    })
+    if err != nil {
+        return nil, err
+    }
+
+    switch parseResp.Intent {
+    case "chat":
+        chatResp, err := AIChat(ctx, &AIChatRequest{
+            Prompt: req.Prompt,
+        })
+        if err != nil {
+            return nil, err
+        }
+        return &AIAssistantResponse{
+            Intent:  "chat",
+            Message: chatResp.Response,
+        }, nil
+
+    case "summarize":
+        sumResp, err := AISummarize(ctx, &AISummarizeRequest{
+            Context: parseResp.Context,
+        })
+        if err != nil {
+            return nil, err
+        }
+        return &AIAssistantResponse{
+            Intent:  "summarize",
+            Summary: sumResp.Summary,
+            Message: "Here is your summary.",
+        }, nil
+
+    case "createTask":
+        taskReq := &AICreateTaskRequest{
+            Context:       req.Prompt, // or parseResp.Context if you want to use extracted context
+            Authorization: req.Authorization,
+        }
+        taskResp, err := AICreateTask(ctx, taskReq)
+        if err != nil {
+            return nil, err
+        }
+        ack := fmt.Sprintf("Task \"%s\" created successfully.", taskResp.Task.Title)
+        return &AIAssistantResponse{
+            Intent:  "createTask",
+            Task:    &taskResp.Task,
+            Message: ack,
+        }, nil
+
+    case "createProject":
+        projReq := &AICreateProjectRequest{
+            Prompt:        req.Prompt,
+            Authorization: req.Authorization,
+        }
+        projResp, err := AICreateProject(ctx, projReq)
+        if err != nil {
+            return nil, err
+        }
+        ack := fmt.Sprintf("Project \"%s\" created with %d tasks.", projResp.Project.Name, len(projResp.Tasks))
+        return &AIAssistantResponse{
+            Intent:  "createProject",
+            Project: &projResp.Project,
+            Tasks:   projResp.Tasks,
+            Message: ack,
+        }, nil
+
+    default:
+        return &AIAssistantResponse{
+            Intent:  parseResp.Intent,
+            Message: "Sorry, I couldn't understand your request.",
+        }, nil
+    }
+}
+
+
 
 
 // AI Endpoints
@@ -156,7 +253,6 @@ func AICreateTask(ctx context.Context, req *AICreateTaskRequest) (*AICreateTaskR
 
     prompt := "Create a task for the following objective/context:\n" + req.Context
     resp, err := callGroqChat(prompt, SystemPromptCreateTask)
-    fmt.Println("\nAI response:", resp)
     if err != nil {
         return nil, err
     }
@@ -174,7 +270,6 @@ func AICreateTask(ctx context.Context, req *AICreateTaskRequest) (*AICreateTaskR
         return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
     }
     
-    fmt.Println("\nParsed AI task:", aiTask)
 
     var projectIDPtr, nextActionIDPtr *string
     if aiTask.ProjectName != "" {
@@ -201,7 +296,6 @@ func AICreateTask(ctx context.Context, req *AICreateTaskRequest) (*AICreateTaskR
         NextActionID:  nextActionIDPtr,
     }
 
-    fmt.Println("\nCreating task with request:", createReq)
     taskResp, err := CreateTask(ctx, createReq)
     if err != nil {
         return nil, err
@@ -214,59 +308,74 @@ func resolveProjectID(name string, userID string) (*string, error) {
     if name == "" {
         return nil, nil
     }
-
     userObjID, err := primitive.ObjectIDFromHex(userID)
     if err != nil {
         return nil, fmt.Errorf("invalid userID format: %v", err)
     }
-
     client := GetMongoClient()
     col := client.Database("gtd").Collection("projects")
     var project struct{ ID primitive.ObjectID `bson:"_id"` }
-
     filter := bson.M{
         "name": bson.M{"$regex": "^" + name + "$", "$options": "i"},
         "userId": userObjID,
     }
-
     err = col.FindOne(context.Background(), filter).Decode(&project)
-    if err != nil {
-        fmt.Println("Project not found for name:", name)
-        return nil, nil
+    if err == nil {
+        idStr := project.ID.Hex()
+        return &idStr, nil
     }
-
-    idStr := project.ID.Hex()
+    // Not found in DB: create it
+    newProject := Project{
+        ID:        primitive.NewObjectID(),
+        UserID:    userObjID,
+        Name:      name,
+        CreatedAt: time.Now(),
+        UpdatedAt: time.Now(),
+        TaskCount: 0,
+    }
+    _, err = col.InsertOne(context.Background(), newProject)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create project: %v", err)
+    }
+    idStr := newProject.ID.Hex()
     return &idStr, nil
 }
 
 
 func resolveNextActionID(name string, userID string) (*string, error) {
-    
     if name == "" {
         return nil, nil
     }
-
     userObjID, err := primitive.ObjectIDFromHex(userID)
     if err != nil {
         return nil, fmt.Errorf("invalid userID format: %v", err)
     }
-
     client := GetMongoClient()
     col := client.Database("gtd").Collection("nextactions")
     var nextAction struct{ ID primitive.ObjectID `bson:"_id"` }
-
     filter := bson.M{
-        "context_name":   bson.M{"$regex": "^" + name + "$", "$options": "i"},
+        "context_name": bson.M{"$regex": "^" + name + "$", "$options": "i"},
         "userId": userObjID,
     }
-
     err = col.FindOne(context.Background(), filter).Decode(&nextAction)
-    if err != nil {
-        fmt.Println("\nNext action not found for name:", name)
-        return nil, fmt.Errorf("next action not found for name '%s': %v", name, err)
+    if err == nil {
+        idStr := nextAction.ID.Hex()
+        return &idStr, nil
     }
-
-    idStr := nextAction.ID.Hex()
+    // Not found in DB: create it
+    newNextAction := NextAction{
+        ID:          primitive.NewObjectID(),
+        UserID:      userObjID,
+        ContextName: name,
+        CreatedAt:   time.Now(),
+        UpdatedAt:   time.Now(),
+        TaskCount:   0,
+    }
+    _, err = col.InsertOne(context.Background(), newNextAction)
+    if err != nil {
+        return nil, fmt.Errorf("failed to create next action: %v", err)
+    }
+    idStr := newNextAction.ID.Hex()
     return &idStr, nil
 }
 
@@ -340,6 +449,7 @@ func AICreateProject(ctx context.Context, req *AICreateProjectRequest) (*AICreat
         }
     }
 
+    /*
     // Update TaskCount in project
      _, err = GetMongoClient().Database("gtd").Collection("projects").UpdateByID(
          ctx,
@@ -350,6 +460,8 @@ func AICreateProject(ctx context.Context, req *AICreateProjectRequest) (*AICreat
          return nil, errors.New("failed to update project task count")
      }
      
+     */
+
     return &AICreateProjectResponse{
         Project: project,
         Tasks:   createdTasks,

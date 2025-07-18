@@ -66,6 +66,7 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 	}
 	client := GetMongoClient()
 	tasksCol := client.Database("gtd").Collection("tasks")
+	projectsCol := client.Database("gtd").Collection("projects")
 
 	var dueDate *time.Time
 	if req.DueDate != nil && *req.DueDate != "" {
@@ -137,6 +138,26 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 	if err != nil {
 		return nil, errors.New("failed to create task")
 	}
+
+	// Increment project task_count if linked
+	if projectID != nil {
+		_, _ = projectsCol.UpdateOne(
+			ctx,
+			bson.M{"_id": projectID},
+			bson.M{"$inc": bson.M{"task_count": 1}},
+		)
+	}
+
+	// Increment nextaction task_count if linked
+	if nextActionID != nil {
+		nextActionsCol := client.Database("gtd").Collection("nextactions")
+		_, _ = nextActionsCol.UpdateOne(
+			ctx,
+			bson.M{"_id": nextActionID},
+			bson.M{"$inc": bson.M{"task_count": 1}},
+		)
+	}
+
 	return &CreateTaskResponse{Task: task}, nil
 }
 
