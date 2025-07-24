@@ -9,6 +9,8 @@ import (
     "io"
     "net/http"
     "time"
+    "github.com/paul-mannino/go-fuzzywuzzy"
+    "strings"
 
 
     "go.mongodb.org/mongo-driver/bson"
@@ -33,7 +35,8 @@ type GroqChatResponse struct {
 }
 
 func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
-    dayAndDate := time.Now().Format("2025-07-18")
+    date := time.Now()
+    dayAndDate := fmt.Sprintf("%s, %s", date.Weekday(), date)
     systemPrompt = fmt.Sprintf("Today is %s ", dayAndDate, systemPrompt)
     reqBody := GroqChatRequest{
         Model: "llama-3.1-8b-instant",
@@ -46,12 +49,13 @@ func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
     req, _ := http.NewRequest("POST", "https://api.groq.com/openai/v1/chat/completions", bytes.NewReader(b))
     req.Header.Set("Authorization", "Bearer "+secrets.GROQ_API_KEY)
     req.Header.Set("Content-Type", "application/json")
-
     resp, err := http.DefaultClient.Do(req)
     if err != nil {
         return "", err
     }
     defer resp.Body.Close()
+    
+    
     if resp.StatusCode != 200 {
         body, _ := io.ReadAll(resp.Body)
         return "", errors.New(fmt.Sprintf("Groq API error: %s", string(body)))
@@ -60,6 +64,7 @@ func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
     if err := json.NewDecoder(resp.Body).Decode(&groqResp); err != nil {
         return "", err
     }
+
     if len(groqResp.Choices) == 0 {
         return "", errors.New("no response from Groq")
     }
@@ -150,6 +155,23 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
             Project: &projResp.Project,
             Tasks:   projResp.Tasks,
             Message: ack,
+        }, nil
+
+    case "completeTask":
+        completeReq := &AICompleteRequest{
+            Prompt:        req.Prompt,
+            Authorization: req.Authorization,
+        }
+        completeResp, err := AICompleteTask(ctx, completeReq)
+        if err != nil {
+            return nil, err
+        }
+        return &AIAssistantResponse{
+            Intent:   "completeTask",
+            Task:     completeResp.Task,
+            Tasks:    completeResp.Tasks,
+            Project:  completeResp.Project,
+            Message:  completeResp.Message,
         }, nil
 
     default:
@@ -472,3 +494,273 @@ func stringPtr(s string) *string {
     return &s
 }
 
+// Task completion endpoint (only for the single tasks, not for multiple tasks)
+
+/*
+type AICompleteTaskRequest struct {
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
+}
+
+type AICompleteTaskResponse struct {
+    Task    *Task   `json:"task,omitempty"`   
+    Tasks   []Task  `json:"tasks,omitempty"`  
+    Message string  `json:"message"`
+}
+
+
+// encore:api public method=POST path=/api/ai/complete-task
+func AICompleteTask(ctx context.Context, req *AICompleteTaskRequest) (*AICompleteTaskResponse, error) {
+    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    // Use Groq to extract the task title (and optionally project/context)
+    resp, err := callGroqChat(req.Prompt, SystemPromptCompleteTask)
+    if err != nil {
+        return nil, err
+    }
+    var aiTask struct {
+        Title         string `json:"title"`
+        ProjectName   string `json:"projectName"`
+        NextActionName string `json:"nextActionName"`
+    }
+    if err := json.Unmarshal([]byte(resp), &aiTask); err != nil {
+        return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
+    }
+    if aiTask.Title == "" {
+        return &AICompleteTaskResponse{
+            Message: "I couldn't determine which task to complete. Please specify the task title precisely.",
+        }, nil
+    }
+
+    matches, err := findAllRelevantTasks(ctx, userID, aiTask.Title, 50)
+if err != nil {
+    return &AICompleteTaskResponse{
+        Message: "Sorry, something went wrong while searching for your task.",
+    }, nil
+}
+if len(matches) == 0 {
+    return &AICompleteTaskResponse{
+        Message: fmt.Sprintf("I couldn't find any task matching \"%s\".", aiTask.Title),
+    }, nil
+}
+if len(matches) > 1 {
+    // Ask user to clarify
+    titles := []string{}
+    for _, t := range matches {
+        titles = append(titles, t.Title)
+    }
+    return &AICompleteTaskResponse{
+        Message: fmt.Sprintf("I found multiple tasks matching \"%s\": %s. Please specify which one you want to complete.", aiTask.Title, strings.Join(titles, "; ")),
+        Tasks:   matches,
+    }, nil
+}
+
+// Only one match, proceed to complete
+foundTask := matches[0]
+_, err = CompleteTask(ctx, foundTask.ID.Hex(), &GetTasksRequest{Authorization: req.Authorization})
+if err != nil {
+    return &AICompleteTaskResponse{
+        Message: fmt.Sprintf("I found the task \"%s\" but couldn't mark it as complete.", foundTask.Title),
+    }, nil
+}
+return &AICompleteTaskResponse{
+    Task:    &foundTask,
+    Message: fmt.Sprintf("Task \"%s\" marked as complete!", foundTask.Title),
+}, nil
+}
+
+
+
+func findAllRelevantTasks(ctx context.Context, userID primitive.ObjectID, title string, threshold int) ([]Task, error) {
+    client := GetMongoClient()
+    tasksCol := client.Database("gtd").Collection("tasks")
+    filter := bson.M{
+        "userId":    userID,
+        "trashed":   false,
+        "completed": false,
+    }
+    cursor, err := tasksCol.Find(ctx, filter)
+    if err != nil {
+        return nil, err
+    }
+    defer cursor.Close(ctx)
+    
+    // Use fuzzy matching to find relevant tasks
+    var matches []Task
+    for cursor.Next(ctx) {
+        var task Task
+        if err := cursor.Decode(&task); err != nil {
+            continue
+        }
+        score := fuzzy.Ratio(strings.ToLower(title), strings.ToLower(task.Title))
+        if score >= threshold {
+            matches = append(matches, task)
+        }
+    }
+    return matches, nil
+}
+*/
+
+
+// AI complete endpoint ( a robust version that can handle tasks, projects, and next actions)
+type AICompleteRequest struct {
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
+}
+type AICompleteResponse struct {
+    Message     string  `json:"message"`
+    Task        *Task   `json:"task,omitempty"`
+    Tasks       []Task  `json:"tasks,omitempty"`
+    Project     *Project `json:"project,omitempty"`
+    NextAction  *NextAction `json:"nextAction,omitempty"`
+    Count       int     `json:"count,omitempty"`
+}
+
+// encore:api public method=POST path=/api/ai/complete
+func AICompleteTask(ctx context.Context, req *AICompleteRequest) (*AICompleteResponse, error) {
+    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    // Use Groq to extract intentType and relevant fields
+    resp, err := callGroqChat(req.Prompt, SystemPromptCompleteTask)
+    if err != nil {
+        return nil, err
+    }
+    var aiResp struct {
+        IntentType     string `json:"intentType"`
+        Title          string `json:"title"`
+        ProjectName    string `json:"projectName"`
+        NextActionName string `json:"nextActionName"`
+    }
+    if err := json.Unmarshal([]byte(resp), &aiResp); err != nil {
+        return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
+    }
+
+    switch aiResp.IntentType {
+    case "task":
+        // Build filter for project/nextAction if present
+        filter := bson.M{
+            "userId":    userID,
+            "trashed":   false,
+            "completed": false,
+        }
+        if aiResp.ProjectName != "" {
+            projectIDPtr, _ := resolveProjectID(aiResp.ProjectName, userID.Hex())
+            if projectIDPtr != nil {
+                projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
+                filter["projectId"] = projectID
+            }
+        }
+        if aiResp.NextActionName != "" {
+            nextActionIDPtr, _ := resolveNextActionID(aiResp.NextActionName, userID.Hex())
+            if nextActionIDPtr != nil {
+                nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
+                filter["nextActionId"] = nextActionID
+            }
+        }
+        matches, err := findRelevantTasks(ctx, filter, aiResp.Title, 50)
+
+        if err != nil {
+            return &AICompleteResponse{Message: "Error searching for your task."}, nil
+        }
+        if len(matches) == 0 {
+            return &AICompleteResponse{Message: fmt.Sprintf("No task found matching \"%s\".", aiResp.Title)}, nil
+        }
+        if len(matches) > 1 {
+            titles := []string{}
+            for _, t := range matches {
+                titles = append(titles, t.Title)
+            }
+            return &AICompleteResponse{
+                Message: fmt.Sprintf("Multiple tasks found: %s. Please specify.", strings.Join(titles, "; ")),
+                Tasks:   matches,
+            }, nil
+        }
+        foundTask := matches[0]
+        _, err = CompleteTask(ctx, foundTask.ID.Hex(), &GetTasksRequest{Authorization: req.Authorization})
+        if err != nil {
+            return &AICompleteResponse{Message: "Could not mark task as complete."}, nil
+        }
+        return &AICompleteResponse{
+            Message: fmt.Sprintf("Task \"%s\" marked as complete!", foundTask.Title),
+            Task:    &foundTask,
+        }, nil
+
+    case "project":
+        // Use your resolveProjectID and fuzzy matching for project name
+        projectIDPtr, _ := resolveProjectID(aiResp.ProjectName, userID.Hex())
+        if projectIDPtr == nil {
+            return &AICompleteResponse{Message: fmt.Sprintf("No project found matching \"%s\".", aiResp.ProjectName)}, nil
+        }
+        projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
+        // Mark all tasks in the project as complete
+        client := GetMongoClient()
+        tasksCol := client.Database("gtd").Collection("tasks")
+        res, err := tasksCol.UpdateMany(ctx, bson.M{
+            "userId":    userID,
+            "projectId": projectID,
+            "completed": false,
+            "trashed":   false,
+        }, bson.M{"$set": bson.M{"completed": true}})
+        if err != nil {
+            return &AICompleteResponse{Message: "Error completing project tasks."}, nil
+        }
+        return &AICompleteResponse{
+            Message: fmt.Sprintf("Marked %d tasks as complete in project \"%s\".", res.ModifiedCount, aiResp.ProjectName),
+            Count:   int(res.ModifiedCount),
+        }, nil
+
+    case "nextAction":
+        // Use your resolvenextActionID and fuzzy matching for context name
+        nextActionIDPtr, _ := resolveNextActionID(aiResp.NextActionName, userID.Hex())
+        if nextActionIDPtr == nil {
+            return &AICompleteResponse{Message: fmt.Sprintf("No next action/context found matching \"%s\".", aiResp.NextActionName)}, nil
+        }
+        nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
+        client := GetMongoClient()
+        tasksCol := client.Database("gtd").Collection("tasks")
+        res, err := tasksCol.UpdateMany(ctx, bson.M{
+            "userId":       userID,
+            "nextActionId": nextActionID,
+            "completed":    false,
+            "trashed":      false,
+        }, bson.M{"$set": bson.M{"completed": true}})
+        if err != nil {
+            return &AICompleteResponse{Message: "Error completing next action tasks."}, nil
+        }
+        return &AICompleteResponse{
+            Message: fmt.Sprintf("Marked %d tasks as complete in next action \"%s\".", res.ModifiedCount, aiResp.NextActionName),
+            Count:   int(res.ModifiedCount),
+        }, nil
+
+    default:
+        return &AICompleteResponse{Message: "Sorry, I couldn't understand what you want to complete."}, nil
+    }
+}
+
+func findRelevantTasks(ctx context.Context, filter bson.M, title string, threshold int) ([]Task, error) {
+    client := GetMongoClient()
+    tasksCol := client.Database("gtd").Collection("tasks")
+    cursor, err := tasksCol.Find(ctx, filter)
+    if err != nil {
+        return nil, err
+    }
+    defer cursor.Close(ctx)
+    var matches []Task
+    for cursor.Next(ctx) {
+        var task Task
+        if err := cursor.Decode(&task); err != nil {
+            continue
+        }
+        score := fuzzy.Ratio(strings.ToLower(title), strings.ToLower(task.Title))
+        if score >= threshold {
+            matches = append(matches, task)
+        }
+    }
+    return matches, nil
+}
