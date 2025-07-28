@@ -73,7 +73,6 @@ func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
 
 
 // Unified AI Assistant Endpoint
-
 type AIAssistantRequest struct {
     Prompt        string `json:"prompt"`
     Authorization string `header:"Authorization"`
@@ -84,6 +83,7 @@ type AIAssistantResponse struct {
     Message     string  `json:"message,omitempty"`
     Task        *Task   `json:"task,omitempty"`
     Project     *Project `json:"project,omitempty"`
+    NextAction  *NextAction `json:"nextAction,omitempty"`
     Tasks       []Task  `json:"tasks,omitempty"`
     Summary     string  `json:"summary,omitempty"`
 }
@@ -113,7 +113,8 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
 
     case "summarize":
         sumResp, err := AISummarize(ctx, &AISummarizeRequest{
-            Context: parseResp.Context,
+            Prompt:        req.Prompt,
+            Authorization: req.Authorization,
         })
         if err != nil {
             return nil, err
@@ -124,9 +125,24 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
             Message: "Here is your summary.",
         }, nil
 
+    case "list":
+        listResp, err := AIListEntities(ctx, &AIListRequest{
+            Prompt:        req.Prompt,
+            Authorization: req.Authorization,
+        })
+        if err != nil {
+            return nil, err
+        }
+        return &AIAssistantResponse{
+            Intent:      "list",
+            Message:     listResp.Message,
+            Tasks:       listResp.Tasks,
+            Project:     nil, // You can add logic to return a single project if needed
+        }, nil
+
     case "createTask":
         taskReq := &AICreateTaskRequest{
-            Context:       req.Prompt, // or parseResp.Context if you want to use extracted context
+            Context:       req.Prompt,
             Authorization: req.Authorization,
         }
         taskResp, err := AICreateTask(ctx, taskReq)
@@ -172,6 +188,22 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
             Tasks:    completeResp.Tasks,
             Project:  completeResp.Project,
             Message:  completeResp.Message,
+        }, nil
+
+    case "updateEntity":
+        updateResp, err := AIUpdateEntity(ctx, &AIUpdateRequest{
+            Prompt:        req.Prompt,
+            Authorization: req.Authorization,
+        })
+        if err != nil {
+            return nil, err
+        }
+        return &AIAssistantResponse{
+            Intent:     "updateEntity",
+            Message:    updateResp.Message,
+            Task:       updateResp.Task,
+            Project:    updateResp.Project,
+            NextAction: updateResp.NextAction,
         }, nil
 
     default:
@@ -237,22 +269,88 @@ func AIChat(ctx context.Context, req *AIChatRequest) (*AIChatResponse, error) {
 }
 
 
-// Summarization endpoint
+// summarization endpoint (project/nextAction progress & general context summarization)
 type AISummarizeRequest struct {
-    Context string `json:"context"`
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
 }
 type AISummarizeResponse struct {
-    Summary string `json:"summary"`
+    Summary  string  `json:"summary"`
+    Progress float64 `json:"progress,omitempty"`
 }
+
 
 // encore:api public method=POST path=/api/ai/summarize
 func AISummarize(ctx context.Context, req *AISummarizeRequest) (*AISummarizeResponse, error) {
-    prompt := "Summarize the following context and suggest improvements:\n" + req.Context
-    resp, err := callGroqChat(prompt, SystemPromptSummarizer)
+    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+    resp, err := callGroqChat(req.Prompt, SystemPromptSummarizer)
     if err != nil {
         return nil, err
     }
-    return &AISummarizeResponse{Summary: resp}, nil
+    var aiResp struct {
+        Intent     string `json:"intent"`
+        Context    string `json:"context"`
+        EntityType string `json:"entityType"`
+        Name       string `json:"name"`
+    }
+    if err := json.Unmarshal([]byte(resp), &aiResp); err != nil {
+        return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
+    }
+
+    switch aiResp.Intent {
+    case "summarize":
+        // General context summarization
+        prompt := "Summarize the following context and suggest improvements:\n" + aiResp.Context
+        summary, err := callGroqChat(prompt, SystemPromptSummarizer)
+        if err != nil {
+            return nil, err
+        }
+        return &AISummarizeResponse{Summary: summary}, nil
+
+    case "summarizeProgress":
+        // Progress summary for project or next action/context
+        client := GetMongoClient()
+        var total, completed int64
+        var summary string
+        switch aiResp.EntityType {
+        case "project":
+            projectIDPtr, _ := resolveProjectID(aiResp.Name, userID.Hex())
+            if projectIDPtr == nil {
+                return &AISummarizeResponse{Summary: "Project not found."}, nil
+            }
+            projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
+            tasksCol := client.Database("gtd").Collection("tasks")
+            total, _ = tasksCol.CountDocuments(ctx, bson.M{"userId": userID, "projectId": projectID, "trashed": false})
+            completed, _ = tasksCol.CountDocuments(ctx, bson.M{"userId": userID, "projectId": projectID, "completed": true, "trashed": false})
+            summary = fmt.Sprintf("Project \"%s\": %d of %d tasks completed.", aiResp.Name, completed, total)
+        case "nextAction":
+            nextActionIDPtr, _ := resolveNextActionID(aiResp.Name, userID.Hex())
+            if nextActionIDPtr == nil {
+                return &AISummarizeResponse{Summary: "Next action/context not found."}, nil
+            }
+            nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
+            tasksCol := client.Database("gtd").Collection("tasks")
+            total, _ = tasksCol.CountDocuments(ctx, bson.M{"userId": userID, "nextActionId": nextActionID, "trashed": false})
+            completed, _ = tasksCol.CountDocuments(ctx, bson.M{"userId": userID, "nextActionId": nextActionID, "completed": true, "trashed": false})
+            summary = fmt.Sprintf("Next action/context \"%s\": %d of %d tasks completed.", aiResp.Name, completed, total)
+        default:
+            return &AISummarizeResponse{Summary: "Sorry, I couldn't understand what you want to summarize."}, nil
+        }
+        var progress float64
+        if total > 0 {
+            progress = float64(completed) / float64(total) * 100
+        }
+        return &AISummarizeResponse{
+            Summary:  summary,
+            Progress: progress,
+        }, nil
+
+    default:
+        return &AISummarizeResponse{Summary: "Sorry, I couldn't understand your request."}, nil
+    }
 }
 
 
@@ -337,6 +435,8 @@ func resolveProjectID(name string, userID string) (*string, error) {
     client := GetMongoClient()
     col := client.Database("gtd").Collection("projects")
     var project struct{ ID primitive.ObjectID `bson:"_id"` }
+
+    // Try exact match (case-insensitive)
     filter := bson.M{
         "name": bson.M{"$regex": "^" + name + "$", "$options": "i"},
         "userId": userObjID,
@@ -346,7 +446,15 @@ func resolveProjectID(name string, userID string) (*string, error) {
         idStr := project.ID.Hex()
         return &idStr, nil
     }
-    // Not found in DB: create it
+
+    // Fuzzy fallback
+    fuzzyID, _ := fuzzyFindOneByTitle(context.Background(), "projects", userObjID, name, 70)
+    if fuzzyID != nil {
+        idStr := fuzzyID.Hex()
+        return &idStr, nil
+    }
+
+    // Not found: create new project
     newProject := Project{
         ID:        primitive.NewObjectID(),
         UserID:    userObjID,
@@ -359,6 +467,7 @@ func resolveProjectID(name string, userID string) (*string, error) {
     if err != nil {
         return nil, fmt.Errorf("failed to create project: %v", err)
     }
+    
     idStr := newProject.ID.Hex()
     return &idStr, nil
 }
@@ -375,6 +484,8 @@ func resolveNextActionID(name string, userID string) (*string, error) {
     client := GetMongoClient()
     col := client.Database("gtd").Collection("nextactions")
     var nextAction struct{ ID primitive.ObjectID `bson:"_id"` }
+
+    // Try exact match (case-insensitive)
     filter := bson.M{
         "context_name": bson.M{"$regex": "^" + name + "$", "$options": "i"},
         "userId": userObjID,
@@ -384,7 +495,15 @@ func resolveNextActionID(name string, userID string) (*string, error) {
         idStr := nextAction.ID.Hex()
         return &idStr, nil
     }
-    // Not found in DB: create it
+
+    // Fuzzy fallback
+    fuzzyID, _ := fuzzyFindOneByTitle(context.Background(), "nextactions", userObjID, name, 70)
+    if fuzzyID != nil {
+        idStr := fuzzyID.Hex()
+        return &idStr, nil
+    }
+
+    // Not found: create new next action/context
     newNextAction := NextAction{
         ID:          primitive.NewObjectID(),
         UserID:      userObjID,
@@ -397,10 +516,10 @@ func resolveNextActionID(name string, userID string) (*string, error) {
     if err != nil {
         return nil, fmt.Errorf("failed to create next action: %v", err)
     }
+
     idStr := newNextAction.ID.Hex()
     return &idStr, nil
 }
-
 
 
 // project creation endpoint
@@ -764,3 +883,470 @@ func findRelevantTasks(ctx context.Context, filter bson.M, title string, thresho
     }
     return matches, nil
 }
+
+
+// AI update endpoint (for tasks, projects, next actions)
+type AIUpdateRequest struct {
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
+}
+type AIUpdateResponse struct {
+    Message     string   `json:"message"`
+    Task        *Task    `json:"task,omitempty"`
+    Project     *Project `json:"project,omitempty"`
+    NextAction  *NextAction `json:"nextAction,omitempty"`
+}
+
+// encore:api public method=POST path=/api/ai/update
+func AIUpdateEntity(ctx context.Context, req *AIUpdateRequest) (*AIUpdateResponse, error) {
+    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    resp, err := callGroqChat(req.Prompt, SystemPromptUpdateEntity)
+    if err != nil {
+        return nil, err
+    }
+    var aiResp struct {
+        EntityType      string   `json:"entityType"`
+        Title           string   `json:"title"`
+        NewTitle        string   `json:"newTitle"`
+        DueDate         string   `json:"dueDate"`
+        ProjectName     string   `json:"projectName"`
+        NextActionName  string   `json:"nextActionName"`
+        Description     string   `json:"description"`
+        Priority        int      `json:"priority"`
+        FieldsToUpdate  []string `json:"fieldsToUpdate"`
+    }
+    if err := json.Unmarshal([]byte(resp), &aiResp); err != nil {
+        return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
+    }
+
+    switch aiResp.EntityType {
+    case "task":
+        // Find the task (optionally filter by project/nextAction if provided)
+        filter := bson.M{
+            "userId":    userID,
+            "trashed":   false,
+        }
+        if aiResp.ProjectName != "" {
+            projectIDPtr, _ := resolveProjectID(aiResp.ProjectName, userID.Hex())
+            if projectIDPtr != nil {
+                projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
+                filter["projectId"] = projectID
+            }
+        }
+        if aiResp.NextActionName != "" {
+            nextActionIDPtr, _ := resolveNextActionID(aiResp.NextActionName, userID.Hex())
+            if nextActionIDPtr != nil {
+                nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
+                filter["nextActionId"] = nextActionID
+            }
+        }
+        matches, err := findRelevantTasks(ctx, filter, aiResp.Title, 50)
+        if err != nil || len(matches) == 0 {
+            return &AIUpdateResponse{Message: "Task not found."}, nil
+        }
+        if len(matches) > 1 {
+            titles := []string{}
+            for _, t := range matches {
+                titles = append(titles, t.Title)
+            }
+            return &AIUpdateResponse{
+                Message: fmt.Sprintf("Multiple tasks found: %s. Please specify.", strings.Join(titles, "; ")),
+            }, nil
+        }
+        task := matches[0]
+        updateReq := &CreateTaskRequest{
+            Authorization: req.Authorization,
+        }
+        // Only set fields that are in fieldsToUpdate
+        for _, field := range aiResp.FieldsToUpdate {
+            switch field {
+            case "title":
+                updateReq.Title = aiResp.NewTitle
+            case "dueDate":
+                if aiResp.DueDate != "" {
+                    updateReq.DueDate = &aiResp.DueDate
+                }
+            case "description":
+                updateReq.Description = aiResp.Description
+            case "priority":
+                updateReq.Priority = aiResp.Priority
+            case "projectName":
+                if aiResp.ProjectName != "" {
+                    projectIDPtr, _ := resolveProjectID(aiResp.ProjectName, userID.Hex())
+                    updateReq.ProjectID = projectIDPtr
+                }
+            case "nextActionName":
+                if aiResp.NextActionName != "" {
+                    nextActionIDPtr, _ := resolveNextActionID(aiResp.NextActionName, userID.Hex())
+                    updateReq.NextActionID = nextActionIDPtr
+                }
+            }
+        }
+        updated, err := UpdateTask(ctx, task.ID.Hex(), updateReq)
+        if err != nil {
+            return &AIUpdateResponse{Message: "Failed to update task."}, nil
+        }
+        return &AIUpdateResponse{
+            Message: fmt.Sprintf("Task \"%s\" updated.", updated.Task.Title),
+            Task:    &updated.Task,
+        }, nil
+
+    case "project":
+        // Find project by title
+        projectIDPtr, _ := resolveProjectID(aiResp.Title, userID.Hex())
+        if projectIDPtr == nil {
+            return &AIUpdateResponse{Message: "Project not found."}, nil
+        }
+        updateReq := &CreateProjectRequest{
+            Authorization: req.Authorization,
+        }
+        for _, field := range aiResp.FieldsToUpdate {
+            switch field {
+            case "title":
+                updateReq.Name = aiResp.NewTitle
+            case "description":
+                updateReq.Description = aiResp.Description
+            }
+        }
+        updated, err := UpdateProject(ctx, *projectIDPtr, updateReq)
+        if err != nil {
+            return &AIUpdateResponse{Message: "Failed to update project."}, nil
+        }
+        return &AIUpdateResponse{
+            Message: fmt.Sprintf("Project \"%s\" updated.", updated.Project.Name),
+            Project: &updated.Project,
+        }, nil
+
+    case "nextAction":
+        // Find next action by title
+        nextActionIDPtr, _ := resolveNextActionID(aiResp.Title, userID.Hex())
+        if nextActionIDPtr == nil {
+            return &AIUpdateResponse{Message: "Next action/context not found."}, nil
+        }
+        updateReq := &CreateNextActionRequest{
+            Authorization: req.Authorization,
+        }
+        for _, field := range aiResp.FieldsToUpdate {
+            switch field {
+            case "title":
+                updateReq.ContextName = aiResp.NewTitle
+            }
+        }
+        updated, err := UpdateNextAction(ctx, *nextActionIDPtr, updateReq)
+        if err != nil {
+            return &AIUpdateResponse{Message: "Failed to update next action/context."}, nil
+        }
+        return &AIUpdateResponse{
+            Message: fmt.Sprintf("Next action/context \"%s\" updated.", updated.NextAction.ContextName),
+            NextAction: &updated.NextAction,
+        }, nil
+
+    default:
+        return &AIUpdateResponse{Message: "Sorry, I couldn't understand what you want to update or move."}, nil
+    }
+}
+
+
+// AI list endpoint (for tasks, projects, next actions)
+type AIListRequest struct {
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
+}
+type AIListResponse struct {
+    Message     string      `json:"message"`
+    Tasks       []Task      `json:"tasks,omitempty"`
+    Projects    []Project   `json:"projects,omitempty"`
+    NextActions []NextAction `json:"nextActions,omitempty"`
+}
+
+
+// encore:api public method=POST path=/api/ai/list
+func AIListEntities(ctx context.Context, req *AIListRequest) (*AIListResponse, error) {
+    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    resp, err := callGroqChat(req.Prompt, SystemPromptListEntities)
+    if err != nil {
+        return nil, err
+    }
+    var aiResp struct {
+        EntityType string `json:"entityType"`
+        Query      string `json:"query"`
+    }
+    if err := json.Unmarshal([]byte(resp), &aiResp); err != nil {
+        return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
+    }
+
+    switch aiResp.EntityType {
+    case "task":
+        filter := bson.M{"userId": userID, "trashed": false}
+        // Try to resolve project or nextAction if query matches
+        if aiResp.Query != "" {
+            // Try project
+            projectIDPtr, _ := resolveProjectID(aiResp.Query, userID.Hex())
+            if projectIDPtr != nil {
+                projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
+                filter["projectId"] = projectID
+            } else {
+                // Try nextAction
+                nextActionIDPtr, _ := resolveNextActionID(aiResp.Query, userID.Hex())
+                if nextActionIDPtr != nil {
+                    nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
+                    filter["nextActionId"] = nextActionID
+                } else {
+                    // Fallback: fuzzy/regex match on title
+                    filter["title"] = bson.M{"$regex": aiResp.Query, "$options": "i"}
+                }
+            }
+        }
+        client := GetMongoClient()
+        tasksCol := client.Database("gtd").Collection("tasks")
+        cursor, err := tasksCol.Find(ctx, filter)
+        if err != nil {
+            return &AIListResponse{Message: "Error listing tasks."}, nil
+        }
+        var tasks []Task
+        defer cursor.Close(ctx)
+        for cursor.Next(ctx) {
+            var t Task
+            if err := cursor.Decode(&t); err == nil {
+                tasks = append(tasks, t)
+            }
+        }
+        return &AIListResponse{
+            Message: fmt.Sprintf("Found %d tasks.", len(tasks)),
+            Tasks:   tasks,
+        }, nil
+
+    case "project":
+        filter := bson.M{"userId": userID, "trashed": false}
+        if aiResp.Query != "" {
+            filter["name"] = bson.M{"$regex": aiResp.Query, "$options": "i"}
+        }
+        client := GetMongoClient()
+        projectsCol := client.Database("gtd").Collection("projects")
+        cursor, err := projectsCol.Find(ctx, filter)
+        if err != nil {
+            return &AIListResponse{Message: "Error listing projects."}, nil
+        }
+        var projects []Project
+        defer cursor.Close(ctx)
+        for cursor.Next(ctx) {
+            var p Project
+            if err := cursor.Decode(&p); err == nil {
+                projects = append(projects, p)
+            }
+        }
+        return &AIListResponse{
+            Message: fmt.Sprintf("Found %d projects.", len(projects)),
+            Projects: projects,
+        }, nil
+
+    case "nextAction":
+        filter := bson.M{"userId": userID, "trashed": false}
+        if aiResp.Query != "" {
+            filter["context_name"] = bson.M{"$regex": aiResp.Query, "$options": "i"}
+        }
+        client := GetMongoClient()
+        nextActionsCol := client.Database("gtd").Collection("nextactions")
+        cursor, err := nextActionsCol.Find(ctx, filter)
+        if err != nil {
+            return &AIListResponse{Message: "Error listing next actions."}, nil
+        }
+        var nextActions []NextAction
+        defer cursor.Close(ctx)
+        for cursor.Next(ctx) {
+            var n NextAction
+            if err := cursor.Decode(&n); err == nil {
+                nextActions = append(nextActions, n)
+            }
+        }
+        return &AIListResponse{
+            Message: fmt.Sprintf("Found %d next actions.", len(nextActions)),
+            NextActions: nextActions,
+        }, nil
+
+    default:
+        return &AIListResponse{Message: "Sorry, I couldn't understand what you want to list."}, nil
+    }
+}
+
+
+
+/*
+// AI restore endpoint (for tasks, projects, next actions)
+type AIRestoreRequest struct {
+    Prompt        string `json:"prompt"`
+    Authorization string `header:"Authorization"`
+}
+type AIRestoreResponse struct {
+    Message     string   `json:"message"`
+    Task        *Task    `json:"task,omitempty"`
+    Project     *Project `json:"project,omitempty"`
+    NextAction  *NextAction `json:"nextAction,omitempty"`
+}
+
+// encore:api public method=POST path=/api/ai/restore
+func AIRestoreEntity(ctx context.Context, req *AIRestoreRequest) (*AIRestoreResponse, error) {
+    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    resp, err := callGroqChat(req.Prompt, SystemPromptRestoreEntity)
+    if err != nil {
+        return nil, err
+    }
+    var aiResp struct {
+        EntityType     string `json:"entityType"`
+        Title          string `json:"title"`
+        ProjectName    string `json:"projectName"`
+        NextActionName string `json:"nextActionName"`
+    }
+    if err := json.Unmarshal([]byte(resp), &aiResp); err != nil {
+        return nil, errors.New("AI response could not be parsed as JSON: " + err.Error())
+    }
+
+    switch aiResp.EntityType {
+    case "task":
+        filter := bson.M{
+            "userId":  userID,
+            "trashed": true,
+        }
+        if aiResp.ProjectName != "" {
+            projectIDPtr, _ := resolveProjectID(aiResp.ProjectName, userID.Hex())
+            if projectIDPtr != nil {
+                projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
+                filter["projectId"] = projectID
+            }
+        }
+        if aiResp.NextActionName != "" {
+            nextActionIDPtr, _ := resolveNextActionID(aiResp.NextActionName, userID.Hex())
+            if nextActionIDPtr != nil {
+                nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
+                filter["nextActionId"] = nextActionID
+            }
+        }
+        matches, err := findRelevantTasks(ctx, filter, aiResp.Title, 50)
+        if err != nil || len(matches) == 0 {
+            return &AIRestoreResponse{Message: "Task not found in trash."}, nil
+        }
+        if len(matches) > 1 {
+            titles := []string{}
+            for _, t := range matches {
+                titles = append(titles, t.Title)
+            }
+            return &AIRestoreResponse{
+                Message: fmt.Sprintf("Multiple trashed tasks found: %s. Please specify.", strings.Join(titles, "; ")),
+            }, nil
+        }
+        task := matches[0]
+        client := GetMongoClient()
+        tasksCol := client.Database("gtd").Collection("tasks")
+        _, err = tasksCol.UpdateOne(ctx, bson.M{"_id": task.ID}, bson.M{"$set": bson.M{"trashed": false}})
+        if err != nil {
+            return &AIRestoreResponse{Message: "Failed to restore task."}, nil
+        }
+        return &AIRestoreResponse{
+            Message: fmt.Sprintf("Task \"%s\" restored.", task.Title),
+            Task:    &task,
+        }, nil
+
+    case "project":
+        client := GetMongoClient()
+        projectsCol := client.Database("gtd").Collection("projects")
+        var project Project
+        err := projectsCol.FindOne(ctx, bson.M{
+            "userId":  userID,
+            "name":    bson.M{"$regex": aiResp.Title, "$options": "i"},
+            "trashed": true,
+        }).Decode(&project)
+        if err != nil {
+            return &AIRestoreResponse{Message: "Project not found in trash."}, nil
+        }
+        _, err = projectsCol.UpdateOne(ctx, bson.M{"_id": project.ID}, bson.M{"$set": bson.M{"trashed": false}})
+        if err != nil {
+            return &AIRestoreResponse{Message: "Failed to restore project."}, nil
+        }
+        return &AIRestoreResponse{
+            Message: fmt.Sprintf("Project \"%s\" restored.", project.Name),
+            Project: &project,
+        }, nil
+
+    case "nextAction":
+        client := GetMongoClient()
+        nextActionsCol := client.Database("gtd").Collection("nextactions")
+        var nextAction NextAction
+        err := nextActionsCol.FindOne(ctx, bson.M{
+            "userId":      userID,
+            "context_name": bson.M{"$regex": aiResp.Title, "$options": "i"},
+            "trashed":     true,
+        }).Decode(&nextAction)
+        if err != nil {
+            return &AIRestoreResponse{Message: "Next action/context not found in trash."}, nil
+        }
+        _, err = nextActionsCol.UpdateOne(ctx, bson.M{"_id": nextAction.ID}, bson.M{"$set": bson.M{"trashed": false}})
+        if err != nil {
+            return &AIRestoreResponse{Message: "Failed to restore next action/context."}, nil
+        }
+        return &AIRestoreResponse{
+            Message:    fmt.Sprintf("Next action/context \"%s\" restored.", nextAction.ContextName),
+            NextAction: &nextAction,
+        }, nil
+
+    default:
+        return &AIRestoreResponse{Message: "Sorry, I couldn't understand what you want to restore."}, nil
+    }
+}
+
+*/
+
+func fuzzyFindOneByTitle(ctx context.Context, colName string, userID primitive.ObjectID, title string, threshold int) (*primitive.ObjectID, error) {
+    client := GetMongoClient()
+    col := client.Database("gtd").Collection(colName)
+    filter := bson.M{"userId": userID}
+    cursor, err := col.Find(ctx, filter)
+    if err != nil {
+        return nil, err
+    }
+    defer cursor.Close(ctx)
+    var bestID *primitive.ObjectID
+    bestScore := threshold
+    for cursor.Next(ctx) {
+        var doc struct {
+            ID    primitive.ObjectID `bson:"_id"`
+            Title string             `bson:"title,omitempty"`
+            Name  string             `bson:"name,omitempty"`
+            ContextName string       `bson:"context_name,omitempty"`
+        }
+        if err := cursor.Decode(&doc); err != nil {
+            continue
+        }
+        var candidate string
+        if doc.Title != "" {
+            candidate = doc.Title
+        } else if doc.Name != "" {
+            candidate = doc.Name
+        } else if doc.ContextName != "" {
+            candidate = doc.ContextName
+        }
+        score := fuzzy.Ratio(strings.ToLower(title), strings.ToLower(candidate))
+        if score > bestScore {
+            id := doc.ID
+            bestID = &id
+            bestScore = score
+        }
+    }
+    if bestID != nil {
+        return bestID, nil
+    }
+    return nil, errors.New("no fuzzy match found")
+}
+
+
