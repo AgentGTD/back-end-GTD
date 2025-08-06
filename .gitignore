@@ -2,5 +2,6 @@
 encore.gen.go
 encore.gen.cue
 /encore.gen
-/dev/.env
+*.env
+*.json
 .secrets.local.cue

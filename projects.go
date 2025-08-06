@@ -31,7 +31,7 @@ type CreateProjectResponse struct {
 
 // encore:api public method=GET path=/api/projects
 func GetProjects(ctx context.Context, req *GetProjectsRequest) (*GetProjectsResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -54,7 +54,7 @@ func GetProjects(ctx context.Context, req *GetProjectsRequest) (*GetProjectsResp
 
 // encore:api public method=POST path=/api/projects
 func CreateProject(ctx context.Context, req *CreateProjectRequest) (*CreateProjectResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -81,7 +81,7 @@ func CreateProject(ctx context.Context, req *CreateProjectRequest) (*CreateProje
 
 // encore:api public method=GET path=/api/projects/:id
 func GetProject(ctx context.Context, id string, req *GetProjectsRequest) (*CreateProjectResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -101,7 +101,7 @@ func GetProject(ctx context.Context, id string, req *GetProjectsRequest) (*Creat
 
 // encore:api public method=PUT path=/api/projects/:id
 func UpdateProject(ctx context.Context, id string, req *CreateProjectRequest) (*CreateProjectResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -132,7 +132,7 @@ func UpdateProject(ctx context.Context, id string, req *CreateProjectRequest) (*
 
 // encore:api public method=DELETE path=/api/projects/:id
 func DeleteProject(ctx context.Context, id string, req *GetProjectsRequest) (*DeleteTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}

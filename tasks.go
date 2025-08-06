@@ -20,7 +20,7 @@ type GetTasksResponse struct {
 
 // encore:api public method=GET path=/api/tasks
 func GetTasks(ctx context.Context, req *GetTasksRequest) (*GetTasksResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -60,7 +60,7 @@ type CreateTaskResponse struct {
 
 // encore:api public method=POST path=/api/tasks
 func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -165,7 +165,7 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 // GetTaskRequest for fetching a specific task
 // encore:api public method=GET path=/api/tasks/:id
 func GetTask(ctx context.Context, id string, req *GetTasksRequest) (*CreateTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -186,7 +186,7 @@ func GetTask(ctx context.Context, id string, req *GetTasksRequest) (*CreateTaskR
 // UpdateTaskRequest for updating a task
 // encore:api public method=PUT path=/api/tasks/:id
 func UpdateTask(ctx context.Context, id string, req *CreateTaskRequest) (*CreateTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -285,7 +285,7 @@ func UpdateTask(ctx context.Context, id string, req *CreateTaskRequest) (*Create
 // CompleteTaskRequest for marking a task as complete
 // encore:api public method=POST path=/api/tasks/:id/complete
 func CompleteTask(ctx context.Context, id string, req *GetTasksRequest) (*CreateTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -318,7 +318,7 @@ type DeleteTaskResponse struct {
 // DeleteTaskRequest for deleting a task (soft delete)
 // encore:api public method=DELETE path=/api/tasks/:id
 func DeleteTask(ctx context.Context, id string, req *GetTasksRequest) (*DeleteTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}

@@ -34,7 +34,7 @@ type GroqChatResponse struct {
     } `json:"choices"`
 }
 
-func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
+func callGroqChat(userID *primitive.ObjectID, userPrompt string, systemPrompt string) (string, error) {
     date := time.Now()
     dayAndDate := fmt.Sprintf("%s, %s", date.Weekday(), date)
     systemPrompt = fmt.Sprintf("Today is %s ", dayAndDate, systemPrompt)
@@ -68,6 +68,21 @@ func callGroqChat(userPrompt string, systemPrompt string) (string, error) {
     if len(groqResp.Choices) == 0 {
         return "", errors.New("no response from Groq")
     }
+
+    
+    var userIDStr string
+    if userID != nil {
+        userIDStr = userID.Hex()
+    }
+    
+    LogEvent("user_prompt", userIDStr, map[string]interface{}{
+      "prompt": userPrompt,
+    })
+    LogEvent("ai_reply", userIDStr, map[string]interface{}{
+      "reply": groqResp.Choices[0].Message.Content,
+    })
+
+
     return groqResp.Choices[0].Message.Content, nil
 }
 
@@ -237,7 +252,7 @@ type AIParseIntentResponse struct {
 
 // encore:api public method=POST path=/api/ai/parse-intent
 func AIParseIntent(ctx context.Context, req *AIParseIntentRequest) (*AIParseIntentResponse, error) {
-    resp, err := callGroqChat(req.Prompt, SystemPromptParseIntent)
+    resp, err := callGroqChat(nil, req.Prompt, SystemPromptParseIntent)
     if err != nil {
         return nil, err
     }
@@ -253,6 +268,7 @@ func AIParseIntent(ctx context.Context, req *AIParseIntentRequest) (*AIParseInte
 // General chat endpoint
 type AIChatRequest struct {
     Prompt string `json:"prompt"`
+    Authorization string `header:"Authorization"`
 }
 
 type AIChatResponse struct {
@@ -261,7 +277,13 @@ type AIChatResponse struct {
 
 // encore:api public method=POST path=/api/ai/chat
 func AIChat(ctx context.Context, req *AIChatRequest) (*AIChatResponse, error) {
-    resp, err := callGroqChat(req.Prompt, SystemPromptChat)
+
+     userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptChat)
     if err != nil {
         return nil, err
     }
@@ -282,11 +304,11 @@ type AISummarizeResponse struct {
 
 // encore:api public method=POST path=/api/ai/summarize
 func AISummarize(ctx context.Context, req *AISummarizeRequest) (*AISummarizeResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
-    resp, err := callGroqChat(req.Prompt, SystemPromptSummarizer)
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptSummarizer)
     if err != nil {
         return nil, err
     }
@@ -304,7 +326,7 @@ func AISummarize(ctx context.Context, req *AISummarizeRequest) (*AISummarizeResp
     case "summarize":
         // General context summarization
         prompt := "Summarize the following context and suggest improvements:\n" + aiResp.Context
-        summary, err := callGroqChat(prompt, SystemPromptSummarizer)
+        summary, err := callGroqChat(&userID, prompt, SystemPromptSummarizer)
         if err != nil {
             return nil, err
         }
@@ -366,13 +388,13 @@ type AICreateTaskResponse struct {
 
 // encore:api public method=POST path=/api/ai/create-task
 func AICreateTask(ctx context.Context, req *AICreateTaskRequest) (*AICreateTaskResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
 
     prompt := "Create a task for the following objective/context:\n" + req.Context
-    resp, err := callGroqChat(prompt, SystemPromptCreateTask)
+    resp, err := callGroqChat(&userID, prompt, SystemPromptCreateTask)
     if err != nil {
         return nil, err
     }
@@ -535,7 +557,12 @@ type AICreateProjectResponse struct {
 
 // encore:api public method=POST path=/api/ai/create-project
 func AICreateProject(ctx context.Context, req *AICreateProjectRequest) (*AICreateProjectResponse, error) {
-    resp, err := callGroqChat(req.Prompt, SystemPromptCreateProject)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptCreateProject)
     if err != nil {
         return nil, err
     }
@@ -630,13 +657,13 @@ type AICompleteTaskResponse struct {
 
 // encore:api public method=POST path=/api/ai/complete-task
 func AICompleteTask(ctx context.Context, req *AICompleteTaskRequest) (*AICompleteTaskResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
 
     // Use Groq to extract the task title (and optionally project/context)
-    resp, err := callGroqChat(req.Prompt, SystemPromptCompleteTask)
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptCompleteTask)
     if err != nil {
         return nil, err
     }
@@ -740,13 +767,13 @@ type AICompleteResponse struct {
 
 // encore:api public method=POST path=/api/ai/complete
 func AICompleteTask(ctx context.Context, req *AICompleteRequest) (*AICompleteResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
 
     // Use Groq to extract intentType and relevant fields
-    resp, err := callGroqChat(req.Prompt, SystemPromptCompleteTask)
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptCompleteTask)
     if err != nil {
         return nil, err
     }
@@ -899,12 +926,12 @@ type AIUpdateResponse struct {
 
 // encore:api public method=POST path=/api/ai/update
 func AIUpdateEntity(ctx context.Context, req *AIUpdateRequest) (*AIUpdateResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
 
-    resp, err := callGroqChat(req.Prompt, SystemPromptUpdateEntity)
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptUpdateEntity)
     if err != nil {
         return nil, err
     }
@@ -1066,12 +1093,12 @@ type AIListResponse struct {
 
 // encore:api public method=POST path=/api/ai/list
 func AIListEntities(ctx context.Context, req *AIListRequest) (*AIListResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
 
-    resp, err := callGroqChat(req.Prompt, SystemPromptListEntities)
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptListEntities)
     if err != nil {
         return nil, err
     }
@@ -1194,12 +1221,12 @@ type AIRestoreResponse struct {
 
 // encore:api public method=POST path=/api/ai/restore
 func AIRestoreEntity(ctx context.Context, req *AIRestoreRequest) (*AIRestoreResponse, error) {
-    userID, err := getUserIDFromContext(ctx, req.Authorization)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
     if err != nil {
         return nil, errors.New("unauthorized")
     }
 
-    resp, err := callGroqChat(req.Prompt, SystemPromptRestoreEntity)
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptRestoreEntity)
     if err != nil {
         return nil, err
     }
@@ -1348,5 +1375,7 @@ func fuzzyFindOneByTitle(ctx context.Context, colName string, userID primitive.O
     }
     return nil, errors.New("no fuzzy match found")
 }
+
+
 
 

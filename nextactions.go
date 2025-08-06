@@ -30,7 +30,7 @@ type CreateNextActionResponse struct {
 
 // encore:api public method=GET path=/api/next-actions
 func GetNextActions(ctx context.Context, req *GetNextActionsRequest) (*GetNextActionsResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -53,7 +53,7 @@ func GetNextActions(ctx context.Context, req *GetNextActionsRequest) (*GetNextAc
 
 // encore:api public method=POST path=/api/next-actions
 func CreateNextAction(ctx context.Context, req *CreateNextActionRequest) (*CreateNextActionResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -76,7 +76,7 @@ func CreateNextAction(ctx context.Context, req *CreateNextActionRequest) (*Creat
 
 // encore:api public method=GET path=/api/next-actions/:id
 func GetNextAction(ctx context.Context, id string, req *GetNextActionsRequest) (*CreateNextActionResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -96,7 +96,7 @@ func GetNextAction(ctx context.Context, id string, req *GetNextActionsRequest) (
 
 // encore:api public method=PUT path=/api/next-actions/:id
 func UpdateNextAction(ctx context.Context, id string, req *CreateNextActionRequest) (*CreateNextActionResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
@@ -125,7 +125,7 @@ func UpdateNextAction(ctx context.Context, id string, req *CreateNextActionReque
 
 // encore:api public method=DELETE path=/api/next-actions/:id
 func DeleteNextAction(ctx context.Context, id string, req *GetNextActionsRequest) (*DeleteTaskResponse, error) {
-	userID, err := getUserIDFromContext(ctx, req.Authorization)
+	userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}

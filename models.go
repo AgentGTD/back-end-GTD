@@ -7,11 +7,12 @@ import (
 
 // User represents a user in the system.
 type User struct {
-	ID        primitive.ObjectID `bson:"_id,omitempty" json:"id"`
-	Email     string             `bson:"email" json:"email"`
-	Password  string             `bson:"password" json:"-"`
-	Name      string             `bson:"name" json:"name"`
-	CreatedAt time.Time          `bson:"createdAt" json:"createdAt"`
+	ID           primitive.ObjectID `bson:"_id,omitempty" json:"id"`
+	FirebaseUID  string             `bson:"firebaseUid" json:"firebaseUid"`
+	Email        string             `bson:"email" json:"email"`
+	Name         string             `bson:"name" json:"name"`
+	Picture      string             `bson:"picture,omitempty" json:"picture,omitempty"`
+	CreatedAt    time.Time          `bson:"createdAt" json:"createdAt"`
 }
 
 // Project represents a project owned by a user.
