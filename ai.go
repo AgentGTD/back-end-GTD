@@ -334,7 +334,10 @@ func AISummarize(ctx context.Context, req *AISummarizeRequest) (*AISummarizeResp
 
     case "summarizeProgress":
         // Progress summary for project or next action/context
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+        if err != nil {
+            return nil, errors.New("database connection failed")
+        }
         var total, completed int64
         var summary string
         switch aiResp.EntityType {
@@ -454,7 +457,10 @@ func resolveProjectID(name string, userID string) (*string, error) {
     if err != nil {
         return nil, fmt.Errorf("invalid userID format: %v", err)
     }
-    client := GetMongoClient()
+    client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
     col := client.Database("gtd").Collection("projects")
     var project struct{ ID primitive.ObjectID `bson:"_id"` }
 
@@ -503,7 +509,10 @@ func resolveNextActionID(name string, userID string) (*string, error) {
     if err != nil {
         return nil, fmt.Errorf("invalid userID format: %v", err)
     }
-    client := GetMongoClient()
+    client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
     col := client.Database("gtd").Collection("nextactions")
     var nextAction struct{ ID primitive.ObjectID `bson:"_id"` }
 
@@ -845,7 +854,10 @@ func AICompleteTask(ctx context.Context, req *AICompleteRequest) (*AICompleteRes
         }
         projectID, _ := primitive.ObjectIDFromHex(*projectIDPtr)
         // Mark all tasks in the project as complete
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+        if err != nil {
+		 return nil, errors.New("database connection failed")
+	    }
         tasksCol := client.Database("gtd").Collection("tasks")
         res, err := tasksCol.UpdateMany(ctx, bson.M{
             "userId":    userID,
@@ -868,7 +880,10 @@ func AICompleteTask(ctx context.Context, req *AICompleteRequest) (*AICompleteRes
             return &AICompleteResponse{Message: fmt.Sprintf("No next action/context found matching \"%s\".", aiResp.NextActionName)}, nil
         }
         nextActionID, _ := primitive.ObjectIDFromHex(*nextActionIDPtr)
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+        if err != nil {
+		 return nil, errors.New("database connection failed")
+	     }
         tasksCol := client.Database("gtd").Collection("tasks")
         res, err := tasksCol.UpdateMany(ctx, bson.M{
             "userId":       userID,
@@ -890,7 +905,10 @@ func AICompleteTask(ctx context.Context, req *AICompleteRequest) (*AICompleteRes
 }
 
 func findRelevantTasks(ctx context.Context, filter bson.M, title string, threshold int) ([]Task, error) {
-    client := GetMongoClient()
+    client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
     tasksCol := client.Database("gtd").Collection("tasks")
     cursor, err := tasksCol.Find(ctx, filter)
     if err != nil {
@@ -1132,7 +1150,10 @@ func AIListEntities(ctx context.Context, req *AIListRequest) (*AIListResponse, e
                 }
             }
         }
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+        if err != nil {
+		 return nil, errors.New("database connection failed")
+	    }
         tasksCol := client.Database("gtd").Collection("tasks")
         cursor, err := tasksCol.Find(ctx, filter)
         if err != nil {
@@ -1156,7 +1177,10 @@ func AIListEntities(ctx context.Context, req *AIListRequest) (*AIListResponse, e
         if aiResp.Query != "" {
             filter["name"] = bson.M{"$regex": aiResp.Query, "$options": "i"}
         }
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+         if err != nil {
+	  	return nil, errors.New("database connection failed")
+	    }
         projectsCol := client.Database("gtd").Collection("projects")
         cursor, err := projectsCol.Find(ctx, filter)
         if err != nil {
@@ -1180,7 +1204,10 @@ func AIListEntities(ctx context.Context, req *AIListRequest) (*AIListResponse, e
         if aiResp.Query != "" {
             filter["context_name"] = bson.M{"$regex": aiResp.Query, "$options": "i"}
         }
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+        if err != nil {
+		 return nil, errors.New("database connection failed")
+	    }
         nextActionsCol := client.Database("gtd").Collection("nextactions")
         cursor, err := nextActionsCol.Find(ctx, filter)
         if err != nil {
@@ -1274,7 +1301,10 @@ func AIRestoreEntity(ctx context.Context, req *AIRestoreRequest) (*AIRestoreResp
             }, nil
         }
         task := matches[0]
-        client := GetMongoClient()
+        client, err := GetMongoClient()
+        if err != nil {
+		 return nil, errors.New("database connection failed")
+	     }
         tasksCol := client.Database("gtd").Collection("tasks")
         _, err = tasksCol.UpdateOne(ctx, bson.M{"_id": task.ID}, bson.M{"$set": bson.M{"trashed": false}})
         if err != nil {
@@ -1335,7 +1365,10 @@ func AIRestoreEntity(ctx context.Context, req *AIRestoreRequest) (*AIRestoreResp
 */
 
 func fuzzyFindOneByTitle(ctx context.Context, colName string, userID primitive.ObjectID, title string, threshold int) (*primitive.ObjectID, error) {
-    client := GetMongoClient()
+    client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
     col := client.Database("gtd").Collection(colName)
     filter := bson.M{"userId": userID}
     cursor, err := col.Find(ctx, filter)

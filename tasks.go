@@ -24,7 +24,10 @@ func GetTasks(ctx context.Context, req *GetTasksRequest) (*GetTasksResponse, err
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	tasksCol := client.Database("gtd").Collection("tasks")
 	cur, err := tasksCol.Find(ctx, bson.M{"userId": userID, "trashed": false})
 	if err != nil {
@@ -64,7 +67,10 @@ func CreateTask(ctx context.Context, req *CreateTaskRequest) (*CreateTaskRespons
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	tasksCol := client.Database("gtd").Collection("tasks")
 	projectsCol := client.Database("gtd").Collection("projects")
 
@@ -169,7 +175,10 @@ func GetTask(ctx context.Context, id string, req *GetTasksRequest) (*CreateTaskR
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	tasksCol := client.Database("gtd").Collection("tasks")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -190,7 +199,10 @@ func UpdateTask(ctx context.Context, id string, req *CreateTaskRequest) (*Create
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	tasksCol := client.Database("gtd").Collection("tasks")
 	projectsCol := client.Database("gtd").Collection("projects")
 	nextActionsCol := client.Database("gtd").Collection("nextactions")
@@ -289,7 +301,10 @@ func CompleteTask(ctx context.Context, id string, req *GetTasksRequest) (*Create
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	tasksCol := client.Database("gtd").Collection("tasks")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -322,7 +337,10 @@ func DeleteTask(ctx context.Context, id string, req *GetTasksRequest) (*DeleteTa
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	tasksCol := client.Database("gtd").Collection("tasks")
 	projectsCol := client.Database("gtd").Collection("projects")
 	nextActionsCol := client.Database("gtd").Collection("nextactions")

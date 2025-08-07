@@ -1,6 +1,12 @@
 {
   "id": "backend-gtd-h6hi",
   "api": {
+    "test": {
+      "handlers": ["test.go"]
+    },
+    "health": {
+      "handlers": ["health.go"]
+    },
     "auth": {
       "handlers": ["auth.go"]
     },

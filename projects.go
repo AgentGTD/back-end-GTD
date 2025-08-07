@@ -35,7 +35,10 @@ func GetProjects(ctx context.Context, req *GetProjectsRequest) (*GetProjectsResp
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("projects")
 	cur, err := col.Find(ctx, bson.M{"userId": userID})
 	if err != nil {
@@ -58,7 +61,10 @@ func CreateProject(ctx context.Context, req *CreateProjectRequest) (*CreateProje
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("projects")
 	var descPtr *string
 	if req.Description != "" {
@@ -85,7 +91,10 @@ func GetProject(ctx context.Context, id string, req *GetProjectsRequest) (*Creat
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("projects")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -105,7 +114,10 @@ func UpdateProject(ctx context.Context, id string, req *CreateProjectRequest) (*
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("projects")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -136,7 +148,10 @@ func DeleteProject(ctx context.Context, id string, req *GetProjectsRequest) (*De
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("projects")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {

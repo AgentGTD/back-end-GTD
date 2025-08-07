@@ -16,10 +16,11 @@ var (
 	firebaseApp  *firebase.App
 	firebaseAuth *auth.Client
 	initOnce     sync.Once
+	initErr      error
 )
 
 // Call this once at startup (e.g. in main or an init function)
-func InitFirebase() {
+func InitFirebase() error {
 	initOnce.Do(func() {
 		log.Println("Initializing Firebase...")
 
@@ -32,14 +33,16 @@ func InitFirebase() {
 		} else {
 			// In production, use the Firebase service account JSON from Encore secrets
 			if secrets.FIREBASE_SERVICE_ACCOUNT == "" {
-				log.Fatal("FIREBASE_SERVICE_ACCOUNT secret not set")
+				initError = errors.New("FIREBASE_SERVICE_ACCOUNT secret not set")
+				return
 			}
 			opt = option.WithCredentialsJSON([]byte(secrets.FIREBASE_SERVICE_ACCOUNT))
 		}
 
 		app, err := firebase.NewApp(context.Background(), nil, opt)
 		if err != nil {
-			log.Fatalf("Error initializing firebase app: %v", err)
+			initError = err
+			return
 		}
 		firebaseApp = app
 
@@ -49,11 +52,14 @@ func InitFirebase() {
 
 		firebaseAuth, err = app.Auth(ctx)
 		if err != nil {
-			log.Fatalf("Error initializing firebase auth: %v", err)
+			initError = err
+			return
 		}
 
 		log.Println("Firebase initialized successfully")
 	})
+
+	return initError
 }
 
 // Returns the Firebase user info if the token is valid, else error.
@@ -62,7 +68,10 @@ func getFirebaseUser(ctx context.Context, idToken string) (*auth.Token, error) {
 		return nil, errors.New("empty token provided")
 	}
 
-	InitFirebase() // Ensure Firebase is initialized
+	// Initialize Firebase if not already done
+	if err := InitFirebase(); err != nil {
+		return nil, err
+	}
 
 	// Add timeout to token verification
 	verifyCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

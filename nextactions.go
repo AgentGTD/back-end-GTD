@@ -34,7 +34,10 @@ func GetNextActions(ctx context.Context, req *GetNextActionsRequest) (*GetNextAc
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("nextactions")
 	cur, err := col.Find(ctx, bson.M{"userId": userID})
 	if err != nil {
@@ -57,7 +60,10 @@ func CreateNextAction(ctx context.Context, req *CreateNextActionRequest) (*Creat
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("nextactions")
 	nextAction := NextAction{
 		ID:          primitive.NewObjectID(),
@@ -80,7 +86,10 @@ func GetNextAction(ctx context.Context, id string, req *GetNextActionsRequest) (
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("nextactions")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -100,7 +109,10 @@ func UpdateNextAction(ctx context.Context, id string, req *CreateNextActionReque
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("nextactions")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {
@@ -129,7 +141,10 @@ func DeleteNextAction(ctx context.Context, id string, req *GetNextActionsRequest
 	if err != nil {
 		return nil, errors.New("unauthorized")
 	}
-	client := GetMongoClient()
+	client, err := GetMongoClient()
+    if err != nil {
+		return nil, errors.New("database connection failed")
+	}
 	col := client.Database("gtd").Collection("nextactions")
 	objID, err := primitive.ObjectIDFromHex(id)
 	if err != nil {

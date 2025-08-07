@@ -14,7 +14,7 @@ var secrets struct {
 }
 
 // Initialize all services
-func InitializeServices() {
+func InitializeServices() error {
 	log.Println("Initializing services...")
 
 	// Initialize secrets from environment variables
@@ -22,16 +22,23 @@ func InitializeServices() {
 	secrets.MONGODB_URI = os.Getenv("MONGODB_URI")
 	secrets.FIREBASE_SERVICE_ACCOUNT = os.Getenv("FIREBASE_SERVICE_ACCOUNT")
 	secrets.SERVER_ENV = os.Getenv("SERVER_ENV")
-	
+
 	if secrets.SERVER_ENV == "" {
 		secrets.SERVER_ENV = "development" // Default to development
 	}
 
-	// Initialize Firebase
-	InitFirebase()
+	// Initialize Firebase (lazy initialization)
+	if err := InitFirebase(); err != nil {
+		log.Printf("Firebase initialization failed: %v", err)
+		// Don't fail startup, just log the error
+	}
 
-	// Initialize MongoDB connection
-	GetMongoClient()
+	// Initialize MongoDB connection (lazy initialization)
+	if _, err := GetMongoClient(); err != nil {
+		log.Printf("MongoDB initialization failed: %v", err)
+		// Don't fail startup, just log the error
+	}
 
-	log.Println("All services initialized successfully")
+	log.Println("Services initialization completed")
+	return nil
 }
