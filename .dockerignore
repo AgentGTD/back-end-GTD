@@ -1,0 +1,58 @@
+# Git files
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Firebase credentials (will be set via environment variables)
+dev/flowdo-aa2dc-firebase-adminsdk-fbsvc-81408554d0.json
+
+# Development files
+.env
+.env.local
+.env.development
+
+# Test files
+*_test.go
+test/
+
+# Build artifacts
+bin/
+dist/
+build/
+
+# Docker files (except Dockerfile)
+docker-compose.yml
+docker-compose.yaml
+.dockerignore
+
+# Encore specific
+.encore/
+encore.app.local
+
+# Node modules (if any)
+node_modules/
+
+# Coverage reports
+coverage/
+*.out

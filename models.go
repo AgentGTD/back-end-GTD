@@ -13,6 +13,7 @@ type User struct {
 	Name         string             `bson:"name" json:"name"`
 	Picture      string             `bson:"picture,omitempty" json:"picture,omitempty"`
 	CreatedAt    time.Time          `bson:"createdAt" json:"createdAt"`
+	UpdatedAt    time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
 // Project represents a project owned by a user.
@@ -26,14 +27,12 @@ type Project struct {
 	UpdatedAt   time.Time          `bson:"updatedAt" json:"updatedAt"`
 }
 
-
-
 // Task represents a task in the system.
 type Task struct {
 	ID            primitive.ObjectID  `bson:"_id,omitempty" json:"id"`
 	UserID        primitive.ObjectID  `bson:"userId" json:"userId"`
-	ProjectID     *primitive.ObjectID `bson:"projectId" json:"projectId"`
-	NextActionID  *primitive.ObjectID `bson:"nextActionId," json:"nextActionId"`
+	ProjectID     *primitive.ObjectID `bson:"projectId,omitempty" json:"projectId,omitempty"`
+	NextActionID  *primitive.ObjectID `bson:"nextActionId,omitempty" json:"nextActionId,omitempty"`
 	Title         string              `bson:"title" json:"title"`
 	Description   string              `bson:"description" json:"description"`
 	DueDate       *time.Time          `bson:"dueDate,omitempty" json:"dueDate,omitempty"`
@@ -44,7 +43,6 @@ type Task struct {
 	CreatedAt     time.Time           `bson:"createdAt" json:"createdAt"`
 	UpdatedAt     time.Time           `bson:"updatedAt" json:"updatedAt"`
 }
-
 
 // NextAction represents a next action in the system.
 type NextAction struct {
