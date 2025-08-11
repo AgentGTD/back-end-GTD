@@ -28,8 +28,7 @@ func InitFirebase() error {
 
 		// Use Encore secrets in production, local file in development
 		if secrets.SERVER_ENV == "development" {
-			// In development, use local file
-			opt = option.WithCredentialsFile("back-end-GTD/dev/flowdo-aa2dc-firebase-adminsdk-fbsvc-81408554d0.json")
+			opt = option.WithCredentialsJSON([]byte(secrets.FIREBASE_SERVICE_ACCOUNT))
 		} else {
 			// In production, use the Firebase service account JSON from Encore secrets
 			if secrets.FIREBASE_SERVICE_ACCOUNT == "" {

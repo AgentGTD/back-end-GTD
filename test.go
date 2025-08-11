@@ -10,7 +10,7 @@ type TestResponse struct {
 }
 
 // Simple test endpoint - no external dependencies
-// encore:api public method=GET path=/test
+// encore:api public method=GET path=/api/test
 func Test(ctx context.Context) (*TestResponse, error) {
 	return &TestResponse{
 		Message: "Test endpoint working!",

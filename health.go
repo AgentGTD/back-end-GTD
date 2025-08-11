@@ -13,7 +13,7 @@ type HealthResponse struct {
 }
 
 // Health check endpoint - simple endpoint that doesn't require any external dependencies
-// encore:api public method=GET path=/health
+// encore:api public method=GET path=/api/health
 func Health(ctx context.Context) (*HealthResponse, error) {
 	return &HealthResponse{
 		Status:    "healthy",

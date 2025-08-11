@@ -108,6 +108,7 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
     // 1. Parse intent
     parseResp, err := AIParseIntent(ctx, &AIParseIntentRequest{
         Prompt: req.Prompt,
+        Authorization: req.Authorization,
     })
     if err != nil {
         return nil, err
@@ -117,6 +118,7 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
     case "chat":
         chatResp, err := AIChat(ctx, &AIChatRequest{
             Prompt: req.Prompt,
+            Authorization: req.Authorization,
         })
         if err != nil {
             return nil, err
@@ -152,7 +154,7 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
             Intent:      "list",
             Message:     listResp.Message,
             Tasks:       listResp.Tasks,
-            Project:     nil, // You can add logic to return a single project if needed
+            Project:     nil, // We can add logic to return a single project if needed
         }, nil
 
     case "createTask":
@@ -237,6 +239,7 @@ func AIAssistant(ctx context.Context, req *AIAssistantRequest) (*AIAssistantResp
 // Parse intent endpoint
 type AIParseIntentRequest struct {
     Prompt string `json:"prompt"`
+    Authorization string `header:"Authorization"`
 }
 
 type AIParseIntentResponse struct {
@@ -252,7 +255,12 @@ type AIParseIntentResponse struct {
 
 // encore:api public method=POST path=/api/ai/parse-intent
 func AIParseIntent(ctx context.Context, req *AIParseIntentRequest) (*AIParseIntentResponse, error) {
-    resp, err := callGroqChat(nil, req.Prompt, SystemPromptParseIntent)
+    userID, err := getUserObjectIDFromAuth(ctx, req.Authorization)
+    if err != nil {
+        return nil, errors.New("unauthorized")
+    }
+
+    resp, err := callGroqChat(&userID, req.Prompt, SystemPromptParseIntent)
     if err != nil {
         return nil, err
     }
